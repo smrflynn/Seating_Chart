@@ -1,0 +1,1 @@
+{"boats": [{"id": 1, "name": "Rouge Wave", "image_file": "rogue_wave_fixed.png"}, {"id": 2, "name": "Gale Force", "image_file": "gale_force_fixed.png"}, {"id": 3, "name": "Island Girl", "image_file": "island_girl_fixed.png"}], "simulation": {"max_iterations": 50, "trials": 250, "attractive_force": -5.0, "repulsive_force": 10.0, "orphan_penalty": 1.0}}
