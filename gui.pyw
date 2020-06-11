@@ -7,6 +7,8 @@ from tkinter.ttk import Progressbar
 
 from PIL import Image, ImageTk
 import cv2
+import copy
+import threading, queue
 
 import graph
 import particle_simulation as ps
@@ -17,7 +19,6 @@ import settings
 settings_file = settings.Settings()
 
 trip = None
-trials = settings_file.get_sim_settings().trials
 attractive_force = settings_file.get_sim_settings().attractive_force
 repulsive_force = settings_file.get_sim_settings().repulsive_force
 orphan_penalty = settings_file.get_sim_settings().orphan_penalty
@@ -133,10 +134,19 @@ class Window(Frame):
             pdf.generate_pdf(file_name, trip, result_img_name)
 
         except Exception as e:
+            print(e)
             messagebox.showerror('Error', 'Unable to generate PDF! Make sure you ran the simulation and a valid CSV file was selected')
 
     def _load_img(self, filepath):
         load = Image.open(filepath)
+        width, height = load.size
+
+        scale = 600.0/height
+        new_w = int(width * scale)
+        new_h = int(height * scale)
+
+        load.thumbnail((new_w, new_h), Image.ANTIALIAS)
+
         render = ImageTk.PhotoImage(load)
         self.img.configure(image=render)
         self.img.image = render
@@ -184,7 +194,7 @@ class Window(Frame):
         progress_window_msg.pack()
 
         progress_bar = Progressbar(self._progress_window, orient=HORIZONTAL, length=300, mode='determinate')
-        progress_bar['maximum'] = trials
+        progress_bar['maximum'] = settings_file.get_sim_settings().trials
         progress_bar.pack(pady=10)
         progress_val = 0
         progress_bar['value'] = progress_val
@@ -207,7 +217,7 @@ class Window(Frame):
         min_energy = 0xFFFFFFFF
         result_img = None
 
-        for progress_val in range(trials):
+        for progress_val in range(settings_file.get_sim_settings().trials):
             sim.init_particles()
             energy = sim.run_sim(show_result=False, max_iterations=50, debug=False)
             img = boat_graph.get_graph_image()
@@ -218,7 +228,7 @@ class Window(Frame):
 
             try:
                 progress_bar['value'] = progress_val + 1
-                progress_window_msg.configure(text="%.2f%%" % (float(progress_val)/float(trials) * 100.0))
+                progress_window_msg.configure(text="%.2f%%" % (float(progress_val)/float(settings_file.get_sim_settings().trials) * 100.0))
                 progress_bar.update_idletasks()
                 self._progress_window.update()
                 self._progress_window.update_idletasks()
@@ -232,8 +242,6 @@ class Window(Frame):
         cv2.imwrite(result_img_name, result_img)
         self._load_img(result_img_name)
         self._update_results()
-
-
 
 
 def display_settings():
@@ -353,7 +361,7 @@ if __name__ == '__main__':
 
     # Window Attributes
     root.wm_title("Seating Chart")
-    root.geometry("1200x600")
+    root.geometry("600x600")
 
     set_boat(settings_file.get_available_boats()[0])
 

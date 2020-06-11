@@ -34,6 +34,7 @@ class Graph:
 
     def get_graph_image(self):
         img = cv2.imread(self._base_img)
+        img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
 
         img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
@@ -53,6 +54,7 @@ class Graph:
                 img_hsv = cv2.circle(img_hsv, position, 5, (0, 0, 0), -1)
 
         img = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
+        img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
         return img
 
 

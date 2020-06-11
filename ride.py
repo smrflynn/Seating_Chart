@@ -45,33 +45,39 @@ class Trip:
                     continue
 
                 if found_data_start:
-                    ride_date = row[0]
-                    first_name = row[1]
-                    last_name = row[2]
-                    group_name = row[3]
-                    confirm_num = row[4]
-                    adults = int(row[5])
-                    children = int(row[6])
-                    comps = int(row[7])
-                    total = int(row[8])
-                    payment = row[9]
-                    reservation_date = row[10]
-                    private_notes = row[11]
-                    comments = row[12]
-                    referal = row[13]
-                    add_ons = row[14]
 
-                    self.ride_date=ride_date
+                    try:
+                        ride_date = row[0]
+                        first_name = row[1]
+                        last_name = row[2]
+                        group_name = row[3]
+                        confirm_num = row[4]
+                        adults = int(row[5])
+                        children = int(row[6])
+                        comps = int(row[7])
+                        total = int(row[8])
+                        payment = row[9]
+                        reservation_date = row[10]
+                        private_notes = row[11]
+                        comments = row[12]
+                        referal = row[13]
+                        add_ons = row[14]
 
-                    new_group = Group(first_name, last_name, confirm_num)
+                        self.ride_date=ride_date
 
-                    for adult in range(adults):
-                        new_group.add_passenger(is_child=False)
+                        new_group = Group(first_name, last_name, confirm_num)
 
-                    for child in range(children):
-                        new_group.add_passenger(is_child=True)
+                        for adult in range(adults):
+                            new_group.add_passenger(is_child=False)
 
-                    self.groups.add(new_group)
+                        for child in range(children):
+                            new_group.add_passenger(is_child=True)
+
+                        self.groups.add(new_group)
+
+                    except:
+                        # Extra row added by excel
+                        pass
 
     def get_passengers(self):
 

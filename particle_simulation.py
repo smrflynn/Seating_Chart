@@ -65,16 +65,20 @@ class Simulation:
         self._attraction_factor = attraction_factor
         self._orphan_penalty = orphan_penalty
 
-        self._min_node_distance = 999999
+        distances = set()
         for node_a in self._graph.get_nodes():
             for node_b in self._graph.get_nodes():
 
                 if node_a == node_b:
                     continue
 
-                dist = graph.get_weight(node_a, node_b)
-                if dist < self._min_node_distance:
-                    self._min_node_distance = dist
+                distances.add(graph.get_weight(node_a, node_b))
+
+        distances = list(distances)
+        distances.sort()
+        self._min_node_distances = [0, 0]
+        self._min_node_distance = distances[0]
+        self._min_node_distances[1] = distances[1]
 
     def init_particles(self):
         """
@@ -157,8 +161,10 @@ class Simulation:
                     distance_from_adult = dist
 
             # Adult and child are seated adjacent (no penalty)
-            if distance_from_adult <= self._min_node_distance:
-                continue
+            if distance_from_adult <= self._min_node_distances[0]:
+                pass
+            elif distance_from_adult <= self._min_node_distances[1]:
+                penalty += self._orphan_penalty * 0.8
 
             # Child is Orphaned Apply Penalty
             else:
@@ -325,6 +331,7 @@ class Simulation:
             print("===================================")
 
         for i in range(max_iterations):
+            print(i)
 
             if debug:
                 print("Running iteration: %i" % i)
