@@ -8,13 +8,15 @@ from tkinter.ttk import Progressbar
 from PIL import Image, ImageTk
 import cv2
 import copy
-import threading, queue
+import threading
+import queue
 
 import graph
 import particle_simulation as ps
 import ride
 import pdf
 import settings
+import bucket_model
 
 settings_file = settings.Settings()
 
@@ -27,6 +29,8 @@ boat_img = None
 boat_init_graph_function = None
 result_img_name = "result.png"
 
+
+NUM_THREADS = 3
 
 class Window(Frame):
     def __init__(self, master=None):
@@ -130,6 +134,9 @@ class Window(Frame):
             messagebox.showerror('Error', 'No save name given')
             return
 
+        if not file_name.endswith(".pdf"):
+            file_name += ".pdf"
+
         try:
             pdf.generate_pdf(file_name, trip, result_img_name)
 
@@ -190,7 +197,13 @@ class Window(Frame):
         self._progress_window.protocol("WM_DELETE_WINDOW", self._destroy_sim_progress)
         self._progress_window.grab_set()
 
-        progress_window_msg = Message(self._progress_window, text="0%%", width=100)
+        progress_window_percent = Message(self._progress_window,
+                                          text="0%",
+                                          width=100)
+        progress_window_percent.pack()
+        progress_window_msg = Message(self._progress_window,
+                                      text="0/%d Simulations" % settings_file.get_sim_settings().trials,
+                                      width=200)
         progress_window_msg.pack()
 
         progress_bar = Progressbar(self._progress_window, orient=HORIZONTAL, length=300, mode='determinate')
@@ -204,11 +217,12 @@ class Window(Frame):
         self._progress_window.update_idletasks()
 
         passengers = trip.get_passengers()
+        test_passengers = copy.deepcopy(passengers)
 
         boat_graph = boat_init_graph_function(boat_img)
 
         try:
-            sim = ps.Simulation(boat_graph, passengers, repulsive_force, attractive_force, orphan_penalty)
+            sim = ps.Simulation(boat_graph, test_passengers, repulsive_force, attractive_force, orphan_penalty)
         except IndexError as e:
             messagebox.showerror('Error', 'There are more passengers than seats!')
             self._progress_window.destroy()
@@ -217,18 +231,33 @@ class Window(Frame):
         min_energy = 0xFFFFFFFF
         result_img = None
 
-        for progress_val in range(settings_file.get_sim_settings().trials):
-            sim.init_particles()
-            energy = sim.run_sim(show_result=False, max_iterations=50, debug=False)
-            img = boat_graph.get_graph_image()
+        job_queue = queue.Queue()
+        result_queue = queue.Queue()
 
-            if energy < min_energy:
-                energy = min_energy
-                result_img = img
+        for progress_val in range(settings_file.get_sim_settings().trials):
+            job_queue.put(progress_val)
+
+        threads = []
+        for i  in range(NUM_THREADS):
+            thread = threading.Thread(target=particle_sim_thread,
+                                      args=(
+                                          copy.deepcopy(test_passengers),
+                                          copy.deepcopy(boat_graph),
+                                          job_queue,
+                                          result_queue
+                                      ))
+            threads.append(thread)
+
+        for thread in threads:
+            thread.start()
+
+        for i in range(settings_file.get_sim_settings().trials):
+            result = result_queue.get()
 
             try:
-                progress_bar['value'] = progress_val + 1
-                progress_window_msg.configure(text="%.2f%%" % (float(progress_val)/float(settings_file.get_sim_settings().trials) * 100.0))
+                progress_bar['value'] = i + 1
+                progress_window_percent.configure(text="%.2f%%" %(float(i) / float(settings_file.get_sim_settings().trials) * 100.0))
+                progress_window_msg.configure(text="%d/%d Simulations" % (i, settings_file.get_sim_settings().trials))
                 progress_bar.update_idletasks()
                 self._progress_window.update()
                 self._progress_window.update_idletasks()
@@ -236,12 +265,74 @@ class Window(Frame):
             except TclError as e:
                 # The window was destroyed
                 # Halt the simulation
+
+                # Clear job queue
+                while not job_queue.empty():
+                    job_num = job_queue.get()
+
+                # Join all threads
+                for thread in threads:
+                    thread.join()
+
+                messagebox.showwarning('Warning', 'Simulation Aborted')
                 return
+
+            # Check is_interesting_result flag
+            if result[0]:
+                energy = result[1]
+                img = result[2]
+                particle_result = result[3]
+
+                if energy < min_energy:
+                    min_energy = energy
+                    result_img = img
+
+                    # Update master list positions
+                    passenger_list = list(passengers)
+                    for particle in particle_result:
+                        for passenger in passenger_list:
+                            if particle == passenger:
+                                passenger.position = copy.copy(particle.position)
+                                passenger_list.remove(passenger)
+                                break
+
+        for thread in threads:
+            thread.join()
 
         self._progress_window.destroy()
         cv2.imwrite(result_img_name, result_img)
         self._load_img(result_img_name)
         self._update_results()
+
+
+def particle_sim_thread(particles, node_graph, job_queue, result_queue):
+    particle_results = copy.deepcopy(particles)
+    min_energy = 0xFFFFFFFF
+
+    sim = ps.Simulation(node_graph, particles, repulsive_force, attractive_force, orphan_penalty)
+
+    while not job_queue.empty():
+        job_num = job_queue.get()
+        sim.init_particles()
+
+        energy, result_particles = sim.run_sim(show_result=False, max_iterations=50, debug=False)
+
+        if energy < min_energy:
+            min_energy = energy
+            result_img = node_graph.get_graph_image()
+
+            result = (True, energy, copy.deepcopy(result_img), copy.deepcopy(result_particles))
+        else:
+            result = (False,)
+
+        result_queue.put(result)
+
+
+    # Cleanup after thread
+    del particle_results
+    del min_energy
+    del sim
+
 
 
 def display_settings():
@@ -340,7 +431,7 @@ def set_boat(boat):
     boat_img = boat.image_file
 
     if boat.id == 1:
-        boat_init_graph_function = graph.init_rouge_wave_graph
+        boat_init_graph_function = bucket_model.init_rouge_wave_graph
     if boat.id == 2:
         boat_init_graph_function = graph.init_gale_force_graph
     if boat.id == 3:

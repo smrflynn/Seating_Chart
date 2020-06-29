@@ -1,6 +1,7 @@
 import random
 import copy
 import numpy as np
+from uuid import uuid4
 
 
 def triangle_wave(x, p, max, min):
@@ -36,23 +37,20 @@ class Particle:
         self.group = group
         self.position = position
         self.is_child = is_child
+        self._id = uuid4()
 
     def __eq__(self, other):
         result = False
 
         if isinstance(other, Particle):
-            result = True
-            result &= self.group == other.group
-            result &= self.position == other.position
-            result &= self.is_child == other.is_child
-
+            result = other._id == self._id
         return result
 
     def __ne__(self, other):
         return not self.__eq__(other)
 
     def __hash__(self):
-        return hash(repr(self))
+        return hash(self._id)
 
 
 class Simulation:
@@ -60,7 +58,6 @@ class Simulation:
     def __init__(self, graph, particles, repulsion_factor, attraction_factor, orphan_penalty):
         self._graph = graph
         self._particles = particles
-        self.init_particles()
         self._repulsion_factor = repulsion_factor
         self._attraction_factor = attraction_factor
         self._orphan_penalty = orphan_penalty
@@ -76,9 +73,22 @@ class Simulation:
 
         distances = list(distances)
         distances.sort()
-        self._min_node_distances = [0, 0]
-        self._min_node_distance = distances[0]
-        self._min_node_distances[1] = distances[1]
+        self._min_node_distances = [distances[0], distances[1]]
+
+        self._groups = dict()
+        for particle in self._particles:
+
+            if particle.group not in self._groups:
+                self._groups[particle.group] = (list(), list())
+
+            if particle.is_child:
+                self._groups[particle.group][1].append(particle)
+            else:
+                self._groups[particle.group][0].append(particle)
+
+        self._occupation_map = dict()
+        for node in self._graph.get_nodes():
+            self._occupation_map[node] = False
 
     def init_particles(self):
         """
@@ -92,16 +102,13 @@ class Simulation:
             raise IndexError("More Passengers Than Seats")
 
         for particle in self._particles:
-            particle.position = nodes.pop()
-
+            node = nodes.pop()
+            particle.position = node
+            self._occupation_map[node] = True
         self._update_image()
 
-    def _get_groups(self):
-        result = set()
-        for particle in self._particles:
-            result.add(particle.group)
-
-        return result
+    def _get_group_names(self):
+        return self._groups.keys()
 
     def _update_image(self):
         """
@@ -112,11 +119,10 @@ class Simulation:
         particles = self._particles.copy()
         group_colors = {}
 
-        groups = self._get_groups()
+        groups = self._get_group_names()
         available_colors = get_n_distinct_group_colors(len(groups))
         for group in groups:
             group_colors[group] = available_colors.pop()
-
 
         for node in self._graph.get_nodes():
             self._graph.set_color(node, None, None)
@@ -134,46 +140,51 @@ class Simulation:
     def _get_group_orphan_penalty(self, group, test_particle=None, test_particle_position=None):
         penalty = 0
 
-        group_children = set()
-        group_adults = set()
+        group_children = set(self._groups[group][1])
+        group_adults = set(self._groups[group][0])
 
-        for particle in self._particles:
-
-            if group == particle.group:
-
-                if (particle == test_particle) and (test_particle_position is not None):
-                    sample = Particle( particle.group, particle.is_child)
-                    sample.position = test_particle_position
-                else:
-                    sample = particle
-
-                if sample.is_child:
-                    group_children.add(sample)
-                else:
-                    group_adults.add(sample)
+        # for particle in self._particles:
+        #
+        #     if group == particle.group:
+        #
+        #         if (particle == test_particle) and (test_particle_position is not None):
+        #             sample = Particle( particle.group, particle.is_child)
+        #             sample.position = test_particle_position
+        #         else:
+        #             sample = particle
+        #
+        #         if sample.is_child:
+        #             group_children.add(sample)
+        #         else:
+        #             group_adults.add(sample)
 
         for child in group_children:
             distance_from_adult = 9999999
+            vector = (0, 0)
 
             for adult in group_adults:
                 dist = self._graph.get_weight(child.position, adult.position)
                 if dist < distance_from_adult:
                     distance_from_adult = dist
+                    vector = self._graph.get_direction_vector(child.position, adult.position)
 
             # Adult and child are seated adjacent (no penalty)
             if distance_from_adult <= self._min_node_distances[0]:
                 pass
             elif distance_from_adult <= self._min_node_distances[1]:
-                penalty += self._orphan_penalty * 0.8
+
+                if vector[0] < 0:
+                    # Child is behind adult
+                    penalty += self._orphan_penalty * 0.5
+                else:
+                    # Child is in front of adult
+                    penalty += self._orphan_penalty * 0.25
 
             # Child is Orphaned Apply Penalty
             else:
                 penalty += self._orphan_penalty
 
         return penalty
-
-
-
 
     def _get_force(self, p1, p2):
         """
@@ -259,17 +270,21 @@ class Simulation:
         particles = self._particles.copy()
         positions = set()
 
-        for node in nodes:
-            particle_found = False
-
-            for p in particles:
-                if node == p.position:
-                    particles.remove(p)
-                    particle_found = True
-                    break
-
-            if not particle_found:
+        for node in self._occupation_map:
+            if not self._occupation_map[node]:
                 positions.add(node)
+
+        # for node in nodes:
+        #     particle_found = False
+        #
+        #     for p in particles:
+        #         if node == p.position:
+        #             particles.remove(p)
+        #             particle_found = True
+        #             break
+        #
+        #     if not particle_found:
+        #         positions.add(node)
         return positions
 
     def run_iteration(self, show_result=False):
@@ -316,6 +331,8 @@ class Simulation:
             # Update the particle's position in the master set
             for particle in self._particles:
                 if particle == test_particle:
+                    self._occupation_map[particle.position] = False
+                    self._occupation_map[best_position] = True
                     particle.position = best_position
                     break
 
@@ -331,7 +348,6 @@ class Simulation:
             print("===================================")
 
         for i in range(max_iterations):
-            print(i)
 
             if debug:
                 print("Running iteration: %i" % i)
@@ -355,7 +371,7 @@ class Simulation:
                 # Has the particle stayed in the same position?
                 for old_p in old_particles:
 
-                    if new_p == old_p:
+                    if new_p == old_p and new_p.position == old_p.position:
                         # Yes: Keep testing for convergence
                         #      No need to keep searching for the particle
                         old_particles.remove(old_p)
@@ -375,7 +391,7 @@ class Simulation:
 
         if debug:
             print("Simulation Complete")
-        return self._get_system_energy()
+        return self._get_system_energy(), self._particles
 
 
 

@@ -28,6 +28,11 @@ class Graph:
         p1 = self._positions[node_b]
         return math.sqrt((p0[0] - p1[0]) ** 2 + (p0[1] - p1[1]) ** 2)
 
+    def get_direction_vector(self, node_a, node_b):
+        p0 = self._positions[node_a]
+        p1 = self._positions[node_b]
+        return p0[0] - p1[0], p0[1] - p1[1]
+
     def show_graph(self):
         cv2.imshow("Result", self.get_graph_image())
         cv2.waitKey(0)
@@ -56,7 +61,6 @@ class Graph:
         img = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
         img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
         return img
-
 
 def init_rouge_wave_graph(image_file):
     graph = Graph(image_file)
